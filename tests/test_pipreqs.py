@@ -53,8 +53,7 @@ class TestPipreqs(unittest.TestCase):
         imports = pipreqs.get_all_imports(self.project)
         self.assertEqual(len(imports), 15)
         for item in imports:
-            self.assertTrue(
-                item.lower() in self.modules, "Import is missing: " + item)
+            self.assertTrue(item.lower() in self.modules, f"Import is missing: {item}")
         self.assertFalse("time" in imports)
         self.assertFalse("logging" in imports)
         self.assertFalse("curses" in imports)
@@ -251,9 +250,9 @@ class TestPipreqs(unittest.TestCase):
         )
         with open(os.path.join(self.project_with_ignore_directory, "requirements.txt"), "r") as f:
             data = f.readlines()
+            symbol = '>='
+            message = 'symbol is not in item'
             for item in data:
-                symbol = '>='
-                message = 'symbol is not in item'
                 self.assertIn(symbol, item, message)
 
     def test_dynamic_version_compat_scheme(self):
@@ -272,9 +271,9 @@ class TestPipreqs(unittest.TestCase):
         )
         with open(os.path.join(self.project_with_ignore_directory, "requirements.txt"), "r") as f:
             data = f.readlines()
+            symbol = '~='
+            message = 'symbol is not in item'
             for item in data:
-                symbol = '~='
-                message = 'symbol is not in item'
                 self.assertIn(symbol, item, message)
 
     def test_clean(self):

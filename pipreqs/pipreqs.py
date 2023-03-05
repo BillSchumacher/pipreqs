@@ -76,7 +76,7 @@ def _open(filename=None, mode='r'):
         elif 'w' in mode:
             file = sys.stdout
         else:
-            raise ValueError('Invalid mode for file: {}'.format(mode))
+            raise ValueError(f'Invalid mode for file: {mode}')
     else:
         file = open(filename, mode)
 
@@ -96,9 +96,9 @@ def get_all_imports(
     ignore_dirs = [".hg", ".svn", ".git", ".tox", "__pycache__", "env", "venv"]
 
     if extra_ignore_dirs:
-        ignore_dirs_parsed = []
-        for e in extra_ignore_dirs:
-            ignore_dirs_parsed.append(os.path.basename(os.path.realpath(e)))
+        ignore_dirs_parsed = [
+            os.path.basename(os.path.realpath(e)) for e in extra_ignore_dirs
+        ]
         ignore_dirs.extend(ignore_dirs_parsed)
 
     walk = os.walk(path, followlinks=follow_links)
@@ -124,10 +124,10 @@ def get_all_imports(
             except Exception as exc:
                 if ignore_errors:
                     traceback.print_exc(exc)
-                    logging.warn("Failed on file: %s" % file_name)
+                    logging.warn(f"Failed on file: {file_name}")
                     continue
                 else:
-                    logging.error("Failed on file: %s" % file_name)
+                    logging.error(f"Failed on file: {file_name}")
                     raise exc
 
     # Clean up imports
@@ -226,20 +226,8 @@ def get_locally_installed_packages(encoding=None):
 
 def get_import_local(imports, encoding=None):
     local = get_locally_installed_packages()
-    result = []
-    for item in imports:
-        if item.lower() in local:
-            result.append(local[item.lower()])
-
-    # removing duplicates of package/version
-    result_unique = [
-        dict(t)
-        for t in set([
-            tuple(d.items()) for d in result
-        ])
-    ]
-
-    return result_unique
+    result = [local[item.lower()] for item in imports if item.lower() in local]
+    return [dict(t) for t in {tuple(d.items()) for d in result}]
 
 
 def get_pkg_names(pkgs):
@@ -252,21 +240,16 @@ def get_pkg_names(pkgs):
         List[str]: The corresponding PyPI package names.
 
     """
-    result = set()
     with open(join("mapping"), "r") as f:
         data = dict(x.strip().split(":") for x in f)
-    for pkg in pkgs:
-        # Look up the mapped requirement. If a mapping isn't found,
-        # simply use the package name.
-        result.add(data.get(pkg, pkg))
+    result = {data.get(pkg, pkg) for pkg in pkgs}
     # Return a sorted list for backward compatibility.
     return sorted(result, key=lambda s: s.lower())
 
 
 def get_name_without_alias(name):
     if "import " in name:
-        match = REGEXP[0].match(name.strip())
-        if match:
+        if match := REGEXP[0].match(name.strip()):
             name = match.groups(0)[0]
     return name.partition(' as ')[0].partition('.')[0].strip()
 
@@ -299,7 +282,7 @@ def parse_requirements(file_):
     try:
         f = open(file_, "r")
     except OSError:
-        logging.error("Failed on file: {}".format(file_))
+        logging.error(f"Failed on file: {file_}")
         raise
     else:
         try:
@@ -311,7 +294,7 @@ def parse_requirements(file_):
 
     for x in data:
         # Check for modules w/o a specifier.
-        if not any([y in x for y in delim]):
+        if all(y not in x for y in delim):
             modules.append({"name": x, "version": None})
         for y in x:
             if y in delim:
@@ -343,9 +326,7 @@ def compare_modules(file_, imports):
 
     imports = [imports[i]["name"] for i in range(len(imports))]
     modules = [modules[i]["name"] for i in range(len(modules))]
-    modules_not_imported = set(modules) - set(imports)
-
-    return modules_not_imported
+    return set(modules) - set(imports)
 
 
 def diff(file_, imports):
@@ -353,8 +334,8 @@ def diff(file_, imports):
     modules_not_imported = compare_modules(file_, imports)
 
     logging.info(
-        "The following modules are in {} but do not seem to be imported: "
-        "{}".format(file_, ", ".join(x for x in modules_not_imported)))
+        f'The following modules are in {file_} but do not seem to be imported: {", ".join(modules_not_imported)}'
+    )
 
 
 def clean(file_, imports):
@@ -362,7 +343,7 @@ def clean(file_, imports):
     modules_not_imported = compare_modules(file_, imports)
 
     if len(modules_not_imported) == 0:
-        logging.info("Nothing to clean in " + file_)
+        logging.info(f"Nothing to clean in {file_}")
         return
 
     re_remove = re.compile("|".join(modules_not_imported))
@@ -371,13 +352,11 @@ def clean(file_, imports):
     try:
         f = open(file_, "r+")
     except OSError:
-        logging.error("Failed on file: {}".format(file_))
+        logging.error(f"Failed on file: {file_}")
         raise
     else:
         try:
-            for i in f.readlines():
-                if re_remove.match(i) is None:
-                    to_write.append(i)
+            to_write.extend(i for i in f if re_remove.match(i) is None)
             f.seek(0)
             f.truncate()
 
@@ -386,7 +365,7 @@ def clean(file_, imports):
         finally:
             f.close()
 
-    logging.info("Successfully cleaned up requirements in " + file_)
+    logging.info(f"Successfully cleaned up requirements in {file_}")
 
 
 def dynamic_versioning(scheme, imports):
@@ -412,8 +391,7 @@ def init(args):
     if extra_ignore_dirs:
         extra_ignore_dirs = extra_ignore_dirs.split(',')
 
-    path = (args["--savepath"] if args["--savepath"] else
-            os.path.join(input_path, "requirements.txt"))
+    path = args["--savepath"] or os.path.join(input_path, "requirements.txt")
     if (not args["--print"]
             and not args["--savepath"]
             and not args["--force"]
@@ -428,11 +406,8 @@ def init(args):
                                  follow_links=follow_links)
     candidates = get_pkg_names(candidates)
     logging.debug("Found imports: " + ", ".join(candidates))
-    pypi_server = "https://pypi.python.org/pypi/"
     proxy = None
-    if args["--pypi-server"]:
-        pypi_server = args["--pypi-server"]
-
+    pypi_server = args["--pypi-server"] or "https://pypi.python.org/pypi/"
     if args["--proxy"]:
         proxy = {'http': args["--proxy"], 'https': args["--proxy"]}
 
@@ -475,7 +450,7 @@ def init(args):
         logging.info("Successfully output requirements")
     else:
         generate_requirements_file(path, imports, symbol)
-        logging.info("Successfully saved requirements file in " + path)
+        logging.info(f"Successfully saved requirements file in {path}")
 
 
 def main():  # pragma: no cover
